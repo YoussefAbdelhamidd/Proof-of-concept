@@ -86,8 +86,9 @@ export function Model(props: any) {
     }),
     wood: new THREE.MeshStandardMaterial({ map: repeatingTexture(woodSource), roughness: 0.7 }),
     carpet: new THREE.MeshStandardMaterial({ map: carpetTexture(), roughness: 1, side: THREE.DoubleSide }),
-    glass: new THREE.MeshStandardMaterial({
-      color: '#d4e8ed', roughness: 0.12, metalness: 0.05,
+    // Unlit glass avoids evaluating all room lights for transparent pixels.
+    glass: new THREE.MeshBasicMaterial({
+      color: '#d4e8ed', toneMapped: false,
       transparent: true, opacity: 0.22, depthWrite: false,
       side: THREE.DoubleSide, forceSinglePass: true,
     }),
