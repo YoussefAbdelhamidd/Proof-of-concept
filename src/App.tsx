@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentType, RefObject } from 'react'
-import type { Group } from 'three'
-import { Vector3 } from 'three'
+import type { Group, SpotLight } from 'three'
+import { Object3D, Raycaster, Vector3 } from 'three'
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
 import { Canvas } from '@react-three/fiber'
 import { PointerLockControls, TransformControls, useProgress } from '@react-three/drei'
@@ -18,6 +18,7 @@ import { Model as AirCon } from './assets/Models/AirCon_mobile.tsx'
 import { Model as BdaiatLogo } from './assets/Models/bdaiatLogo-v5.tsx'
 import { Model as Astro } from './assets/Models/astro.tsx'
 import { Sticker1201, Sticker1202, Sticker1203 } from './assets/Models/Stickers.tsx'
+import { PerformanceDiagnostics } from './PerformanceDiagnostics.tsx'
 import './App.css'
 
 RectAreaLightUniformsLib.init()
@@ -43,19 +44,6 @@ function SceneReady({ onReady }: { onReady: () => void }) {
   useFrame(() => {
     // Wait for an actual scene frame, including the first shader compilation.
     if (++frames.current === 2) onReady()
-  })
-  return null
-}
-
-function FrameRate({ output }: { output: RefObject<HTMLSpanElement | null> }) {
-  const sample = useRef({ seconds: 0, frames: 0 })
-  useFrame((_, delta) => {
-    sample.current.seconds += delta
-    sample.current.frames++
-    if (sample.current.seconds >= 1) {
-      if (output.current) output.current.textContent = `${Math.round(sample.current.frames / sample.current.seconds)} FPS`
-      sample.current = { seconds: 0, frames: 0 }
-    }
   })
   return null
 }
@@ -109,7 +97,7 @@ const chairRotations: [number, number, number][] = [
   [3.142, -1.458, 3.142],
 ]
 
-// Two rows of three, joined by one light across the front of the room.
+// Ceiling fixtures follow the black U-shaped rail.
 const ceilingLightPositions: [number, number, number][] = [
   [-1.25, 3.43, 2.251],
   [-1.25, 3.43, 0],
@@ -118,6 +106,7 @@ const ceilingLightPositions: [number, number, number][] = [
   [1.25, 3.43, -3.2],
   [1.25, 3.43, 0],
   [1.25, 3.427, 2.341],
+  [-1.25, 3.43, -1.6],
 ]
 
 const ceilingLightRotations: [number, number, number][] = ceilingLightPositions.map((_, index) =>
@@ -177,7 +166,13 @@ function CeilingLights(props: Pick<SceneItemProps, 'selected' | 'mode' | 'onSele
         <meshStandardMaterial color="#111111" roughness={0.7} />
       </mesh>
       {ceilingLightPositions.map((position, index) => (
-        <CeilingBulb key={index} name={`Ceiling light ${index + 1}`} position={position} rotation={ceilingLightRotations[index]} {...props} />
+        <CeilingBulb
+          key={index}
+          name={`Ceiling light ${index + 1}`}
+          position={position}
+          rotation={ceilingLightRotations[index]}
+          {...props}
+        />
       ))}
     </group>
   )
@@ -232,7 +227,9 @@ function SceneItem({ name, component: Component, position, scale = 1, rotation =
 
 function FirstPersonController({ chairBodies }: { chairBodies: RefObject<Map<string, RapierRigidBody>> }) {
   const controls = useRef<any>(null)
-  const { camera } = useThree()
+  const { camera, scene } = useThree()
+  const wallRay = useRef(new Raycaster())
+  const wallRayOrigin = useRef(new Vector3())
   const keys = useRef<Record<string, boolean>>({})
   const forward = useRef(new Vector3())
   const right = useRef(new Vector3())
@@ -279,8 +276,21 @@ function FirstPersonController({ chairBodies }: { chairBodies: RefObject<Map<str
     if (movement.current.lengthSq() > 0) {
       movement.current.normalize().multiplyScalar(2.5 * Math.min(delta, 0.05))
       const nextPosition = camera.position.clone().add(movement.current)
-      nextPosition.x = Math.max(-1.8, Math.min(1.8, nextPosition.x))
-      nextPosition.z = Math.max(-4.6, Math.min(4.6, nextPosition.z))
+      // Follow actual building surfaces rather than the previous room rectangle.
+      const building = scene.getObjectByName('Building collision geometry')
+      let blockedByBuilding = false
+      if (building) {
+        wallRay.current.far = movement.current.length() + 0.18
+        const direction = movement.current.clone().normalize()
+        for (const height of [0.85, 1.25, 1.7]) {
+          wallRayOrigin.current.set(camera.position.x, height + jumpHeight.current, camera.position.z)
+          wallRay.current.set(wallRayOrigin.current, direction)
+          if (wallRay.current.intersectObject(building, true).length > 0) {
+            blockedByBuilding = true
+            break
+          }
+        }
+      }
       const blockedByDesk = deskPositions.some(([x, , z]) => Math.abs(nextPosition.x - x) < 0.6 && Math.abs(nextPosition.z - z) < 0.7)
       // Test the player's footprint in the whiteboard's rotated local space.
       const boardDx = nextPosition.x - boardPosition[0]
@@ -289,7 +299,7 @@ function FirstPersonController({ chairBodies }: { chairBodies: RefObject<Map<str
       const boardSin = Math.sin(boardRotation[1])
       const blockedByBoard = Math.abs(boardCos * boardDx - boardSin * boardDz) < boardColliderSize[0] + 0.18
         && Math.abs(boardSin * boardDx + boardCos * boardDz) < boardColliderSize[2] + 0.18
-      const blockedByFixedObject = blockedByDesk || blockedByBoard
+      const blockedByFixedObject = blockedByBuilding || blockedByDesk || blockedByBoard
       let movementFraction = 1
       if (!blockedByFixedObject) {
         for (const body of chairBodies.current.values()) {
@@ -338,15 +348,56 @@ function FirstPersonController({ chairBodies }: { chairBodies: RefObject<Map<str
   )
 }
 
+function Flashlight({ enabled }: { enabled: boolean }) {
+  const light = useRef<SpotLight>(null)
+  const [target] = useState(() => new Object3D())
+  const direction = useRef(new Vector3())
+  const { camera } = useThree()
+
+  useFrame(() => {
+    if (!enabled || !light.current) return
+    camera.getWorldPosition(light.current.position)
+    camera.getWorldDirection(direction.current)
+    target.position.copy(light.current.position).addScaledVector(direction.current, 10)
+    target.updateMatrixWorld()
+  })
+
+  return (
+    <>
+      <primitive object={target} />
+      <spotLight
+        ref={light}
+        target={target}
+        visible={enabled}
+        color="#fff4df"
+        intensity={35}
+        distance={24}
+        angle={Math.PI / 7}
+        penumbra={0.55}
+        decay={1.5}
+      />
+    </>
+  )
+}
+
 function App() {
   const [ready, setReady] = useState(false)
   const markReady = useCallback(() => setReady(true), [])
-  const [lightsEnabled, setLightsEnabled] = useState(false)
+  const [lightsEnabled, setLightsEnabled] = useState(true)
+  const [flashlightEnabled, setFlashlightEnabled] = useState(false)
+  const [renderDpr, setRenderDpr] = useState(() => Math.min(window.devicePixelRatio || 1, 1.5))
   const fpsOutput = useRef<HTMLSpanElement>(null)
+  const diagnosticsOutput = useRef<HTMLPreElement>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'KeyL' && !event.repeat && !(event.target instanceof HTMLInputElement)) {
         setLightsEnabled((enabled) => !enabled)
+      }
+      if (event.code === 'KeyF' && !event.repeat && !(event.target instanceof HTMLInputElement)) {
+        setFlashlightEnabled((enabled) => !enabled)
+      }
+      if (event.code === 'KeyR' && !event.repeat && !(event.target instanceof HTMLInputElement)) {
+        setRenderDpr((current) => current > 1 ? 1 : Math.min(window.devicePixelRatio || 1, 1.5))
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -383,27 +434,18 @@ function App() {
 
   return (
     <main id="scene">
-      <Canvas dpr={[1, 1.5]} gl={{ powerPreference: 'high-performance' }} camera={{ position: [-1.5, 1.7, 4.2], fov: 75 }}>
+      <Canvas shadows={false} dpr={renderDpr} gl={{ powerPreference: 'high-performance' }} camera={{ position: [-1.5, 1.7, 4.2], fov: 75 }}>
         <Suspense fallback={null}>
         <Physics gravity={[0, -9.81, 0]}>
         <SceneReady onReady={markReady} />
-        <FrameRate output={fpsOutput} />
-        <RigidBody type="fixed" colliders={false}>
-          <CuboidCollider args={[2.4, 0.15, 5.2]} position={[0, 0.35, 0]} />
-          {/* Room walls match the Untitled model's world-space boundaries. */}
-          <CuboidCollider args={[0.1, 1.5, 5.2]} position={[-2.181, 1.997, 0.219]} />
-          <CuboidCollider args={[0.1, 1.5, 5.2]} position={[2.019, 1.997, 0.219]} />
-          <CuboidCollider args={[2, 1.5, 0.1]} position={[-0.081, 1.997, -4.881]} />
-          <CuboidCollider args={[2, 1.5, 0.1]} position={[-0.081, 1.997, 5.319]} />
-          {[-2.5, 2.5].map((z) => (
-            <CuboidCollider key={z} args={[0.1, 1.5, 0.6]} position={[-1.991, 1.997, z + 0.219]} />
-          ))}
-        </RigidBody>
+        <PerformanceDiagnostics fpsOutput={fpsOutput} output={diagnosticsOutput} />
         <color attach="background" args={['#20242b']} />
         <CeilingLights lightsEnabled={lightsEnabled} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} />
         {!lightsEnabled && <hemisphereLight color="#fff1d6" groundColor="#756750" intensity={1} />}
         <group onClick={() => setSelected(null)}>
-          <Office />
+          <RigidBody type="fixed" colliders="trimesh">
+            <Office />
+          </RigidBody>
         </group>
         {deskPositions.map((position, index) => (
           <SceneItem key={`desk-${index + 1}`} name={`Desk ${index + 1}`} component={Desk} position={position} rotation={[0, 0, 0]} scale={deskScale} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="fixed" />
@@ -428,13 +470,17 @@ function App() {
         <SceneItem name="Sticker 1203" component={Sticker1203} position={[-1.884, 1.9, 2.737]} rotation={[-3.142, 1.555, -3.142]} scale={[2.623, 2.623, 2.623]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <SceneItem name="Astro" component={Astro} position={[1.25, 0.5, 4.1]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <FirstPersonController chairBodies={chairBodies} />
+        <Flashlight enabled={flashlightEnabled} />
         </Physics>
         </Suspense>
       </Canvas>
       {!ready && <LoadingScreen />}
       <div className="scene-tools">
         <button onClick={() => setLightsEnabled((enabled) => !enabled)} aria-pressed={!lightsEnabled}>
-          {lightsEnabled ? 'Use smooth warm lighting (L)' : 'Use detailed ceiling lighting (L)'}
+          {lightsEnabled ? 'Use smooth warm lighting (L)' : 'Use 8 ceiling lights (L)'}
+        </button>
+        <button onClick={() => setFlashlightEnabled((enabled) => !enabled)} aria-pressed={flashlightEnabled}>
+          {flashlightEnabled ? 'Turn flashlight off (F)' : 'Turn flashlight on (F)'}
         </button>
         <span ref={fpsOutput} aria-label="Frame rate">Measuring FPS…</span>
         <button onClick={() => setMode('translate')} className={mode === 'translate' ? 'active' : ''}>Move</button>
@@ -442,6 +488,10 @@ function App() {
         <button onClick={() => setMode('scale')} className={mode === 'scale' ? 'active' : ''}>Scale</button>
         {selectedCode && <input className="transform-code" value={selectedCode} readOnly onFocus={(event) => event.currentTarget.select()} aria-label="Generated JSX transform" />}
       </div>
+      <details className="performance-panel" open>
+        <summary>Performance · L: lighting · R: resolution</summary>
+        <pre ref={diagnosticsOutput}>Measuring scene performance…</pre>
+      </details>
       <div className="scene-crosshair" aria-hidden="true" />
     </main>
   )

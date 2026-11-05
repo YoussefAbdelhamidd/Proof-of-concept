@@ -1,3 +1,21 @@
+.performance-panel {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 5;
+  max-width: calc(100% - 32px);
+  padding: 12px;
+  border: 1px solid #ffffff26;
+  border-radius: 8px;
+  background: #11151bef;
+  color: #d7e3ff;
+  text-align: left;
+  font: 12px/1.6 var(--mono);
+}
+
+.performance-panel summary { cursor: pointer; }
+.performance-panel pre { margin: 10px 0 0; white-space: pre-wrap; font: inherit; }
+
 .scene-loading {
   position: absolute;
   inset: 0;
