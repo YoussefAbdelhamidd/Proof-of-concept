@@ -1,15 +1,15 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useGLTF } from '@react-three/drei'
 import type { ThreeElements } from '@react-three/fiber'
-import { Box3, Group, Vector3 } from 'three'
+import { Box3, Mesh, Vector3 } from 'three'
+import { mergeStaticModel } from '../../utils/mergeStaticModel.ts'
 
 const modelUrl = new URL('./astro.glb', import.meta.url).href
 
 export function Model(props: ThreeElements['group']) {
   const { scene } = useGLTF(modelUrl)
   const model = useMemo(() => {
-    const root = new Group()
-    root.add(scene.clone(true))
+    const root = mergeStaticModel(scene)
     const bounds = new Box3().setFromObject(root)
     const size = bounds.getSize(new Vector3())
     const center = bounds.getCenter(new Vector3())
@@ -19,6 +19,12 @@ export function Model(props: ThreeElements['group']) {
     root.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale)
     return root
   }, [scene])
+
+  useEffect(() => () => {
+    model.traverse((object) => {
+      if (object instanceof Mesh) object.geometry.dispose()
+    })
+  }, [model])
 
   return <group {...props} dispose={null}><primitive object={model} /></group>
 }

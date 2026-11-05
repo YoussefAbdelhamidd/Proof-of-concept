@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentType, RefObject } from 'react'
 import type { Group } from 'three'
 import { Vector3 } from 'three'
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
 import { Canvas } from '@react-three/fiber'
-import { PointerLockControls, TransformControls } from '@react-three/drei'
+import { PointerLockControls, TransformControls, useProgress } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { CuboidCollider, Physics, RigidBody } from '@react-three/rapier'
 import type { RapierRigidBody } from '@react-three/rapier'
@@ -21,6 +21,31 @@ import { Sticker1201, Sticker1202, Sticker1203 } from './assets/Models/Stickers.
 import './App.css'
 
 RectAreaLightUniformsLib.init()
+
+function LoadingScreen() {
+  const { progress, errors } = useProgress()
+  const percent = Math.min(100, Math.round(progress))
+  return (
+    <div className="scene-loading" role="status" aria-live="polite">
+      <div className="scene-loading-card">
+        <span className="scene-loading-label">BDAIAT OFFICE</span>
+        <h1>{errors.length ? 'Unable to load the room' : 'Getting the room ready'}</h1>
+        <p>{errors.length ? 'Please reload to try again.' : percent < 100 ? 'Loading models and textures…' : 'Preparing the scene…'}</p>
+        {!errors.length && <progress aria-label="Scene loading progress" max={100} value={percent} />}
+        <span>{errors.length ? <button onClick={() => window.location.reload()}>Reload</button> : `${percent}%`}</span>
+      </div>
+    </div>
+  )
+}
+
+function SceneReady({ onReady }: { onReady: () => void }) {
+  const frames = useRef(0)
+  useFrame(() => {
+    // Wait for an actual scene frame, including the first shader compilation.
+    if (++frames.current === 2) onReady()
+  })
+  return null
+}
 
 type SceneItemProps = {
   name: string
@@ -301,6 +326,8 @@ function FirstPersonController({ chairBodies }: { chairBodies: RefObject<Map<str
 }
 
 function App() {
+  const [ready, setReady] = useState(false)
+  const markReady = useCallback(() => setReady(true), [])
   const chairBodies = useRef(new Map<string, RapierRigidBody>())
   const [selected, setSelected] = useState<string | null>(null)
   const [mode, setMode] = useState<'translate' | 'rotate' | 'scale'>('translate')
@@ -332,8 +359,10 @@ function App() {
 
   return (
     <main id="scene">
-      <Canvas camera={{ position: [-1.5, 1.7, 4.2], fov: 75 }}>
+      <Canvas dpr={[1, 1.5]} gl={{ powerPreference: 'high-performance' }} camera={{ position: [-1.5, 1.7, 4.2], fov: 75 }}>
+        <Suspense fallback={null}>
         <Physics gravity={[0, -9.81, 0]}>
+        <SceneReady onReady={markReady} />
         <RigidBody type="fixed" colliders={false}>
           <CuboidCollider args={[2.4, 0.15, 5.2]} position={[0, 0.35, 0]} />
           {/* Room walls match the Untitled model's world-space boundaries. */}
@@ -374,7 +403,9 @@ function App() {
         <SceneItem name="Astro" component={Astro} position={[1.25, 0.5, 4.1]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <FirstPersonController chairBodies={chairBodies} />
         </Physics>
+        </Suspense>
       </Canvas>
+      {!ready && <LoadingScreen />}
       <div className="scene-tools">
         <button onClick={() => setMode('translate')} className={mode === 'translate' ? 'active' : ''}>Move</button>
         <button onClick={() => setMode('rotate')} className={mode === 'rotate' ? 'active' : ''}>Rotate</button>
