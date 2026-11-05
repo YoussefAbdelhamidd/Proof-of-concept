@@ -16,7 +16,6 @@ import { Model as Board } from './assets/Models/whhiteBoard.tsx'
 import { Model as DisplayStand } from './assets/Models/DisplayStand_mobile.tsx'
 import { Model as AirCon } from './assets/Models/AirCon_mobile.tsx'
 import { Model as BdaiatLogo } from './assets/Models/bdaiatLogo-v5.tsx'
-import { Model as Astro } from './assets/Models/astro.tsx'
 import { Sticker1201, Sticker1202, Sticker1203 } from './assets/Models/Stickers.tsx'
 import './App.css'
 
@@ -400,7 +399,6 @@ function App() {
         <SceneItem name="Sticker 1201" component={Sticker1201} position={[1.9, 1.9, 0.091]} rotation={[0, -1.571, 0]} scale={[3.28, 3.816, 9.985]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <SceneItem name="Sticker 1202" component={Sticker1202} position={[-1.865, 2.061, -2.288]} rotation={[0, 1.558, 0]} scale={[3.522, 3.522, 3.522]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <SceneItem name="Sticker 1203" component={Sticker1203} position={[-1.884, 1.9, 2.737]} rotation={[-3.142, 1.555, -3.142]} scale={[2.623, 2.623, 2.623]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
-        <SceneItem name="Astro" component={Astro} position={[1.25, 0.5, 4.1]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <FirstPersonController chairBodies={chairBodies} />
         </Physics>
         </Suspense>
