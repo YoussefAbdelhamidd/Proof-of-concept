@@ -4,6 +4,7 @@ Command: npx gltfjsx@6.5.3 src/assets/Models/Untitled.glb --output src/assets/Mo
 */
 
 import * as THREE from 'three'
+import { useMemo } from 'react'
 import { useGLTF } from '@react-three/drei'
 import type { GLTF } from 'three-stdlib'
 
@@ -26,12 +27,38 @@ const modelUrl = new URL('./Untitled.glb', import.meta.url).href
 
 export function Model(props: any) {
   const { nodes, materials } = useGLTF(modelUrl) as unknown as GLTFResult
+  const wallMaterial = useMemo(() => {
+    const material = materials['Mat_Wall.003'].clone()
+    // Approximate a small amount of bounced light on the walls themselves.
+    material.emissive.set('#fff1d6')
+    material.emissiveIntensity = 0.045
+    return material
+  }, [materials])
   return (
     <group {...props} dispose={null}>
       <mesh geometry={nodes.Balcony_Door_Frame.geometry} material={materials['Mat_WindowFrame.002']} position={[-0.081, 0.497, 0.219]} />
       <mesh geometry={nodes.Balcony_Door_Glass.geometry} material={materials['Mat_WindowGlass.002']} position={[-0.081, 0.497, 0.219]} />
       <mesh geometry={nodes.Office_Floor.geometry} material={materials['Mat_CarpetFloor.003']} position={[-0.081, 0.499, 0.219]} scale={[4, 1, 10]} />
-      <mesh geometry={nodes.Office_Walls.geometry} material={materials['Mat_Wall.003']} position={[-0.081, 0.497, 0.219]} />
+      <mesh geometry={nodes.Office_Walls.geometry} material={wallMaterial} position={[-0.081, 0.497, 0.219]} />
+      {/* Subtle ceiling-only fill: visible evenly, without casting light onto walls. */}
+      <mesh name="Ceiling" position={[-0.081, 3.49, 0.219]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[4, 10]} />
+        <meshStandardMaterial color={materials['Mat_Wall.003'].color} roughness={1} emissive="#fff1d6" emissiveIntensity={0.22} />
+      </mesh>
+      {/* Full-height raised panels on the left wall. */}
+      <group position={[-0.081, 0.497, 0.219]}>
+        {[-2.5, 2.5].map((z) => (
+          <mesh key={z} name={`Left wall panel ${z < 0 ? 'back' : 'front'}`} position={[-1.91, 1.5, z]} rotation={[0, Math.PI / 2, 0]}>
+            <boxGeometry args={[1.2, 3, 0.2]} />
+            <meshStandardMaterial attach="material-0" color="#2463cc" roughness={0.8} />
+            <meshStandardMaterial attach="material-1" color="#2463cc" roughness={0.8} />
+            <meshStandardMaterial attach="material-2" color="#2463cc" roughness={0.8} />
+            <meshStandardMaterial attach="material-3" color="#2463cc" roughness={0.8} />
+            <primitive attach="material-4" object={wallMaterial} />
+            <primitive attach="material-5" object={wallMaterial} />
+          </mesh>
+        ))}
+      </group>
     </group>
   )
 }
