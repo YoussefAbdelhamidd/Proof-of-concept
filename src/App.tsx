@@ -16,6 +16,7 @@ import { Model as Board } from './assets/Models/whhiteBoard.tsx'
 import { Model as DisplayStand } from './assets/Models/DisplayStand_mobile.tsx'
 import { Model as AirCon } from './assets/Models/AirCon_mobile.tsx'
 import { Model as BdaiatLogo } from './assets/Models/bdaiatLogo-v5.tsx'
+import { Model as Astro } from './assets/Models/astro.tsx'
 import { Sticker1201, Sticker1202, Sticker1203 } from './assets/Models/Stickers.tsx'
 import './App.css'
 
@@ -42,6 +43,19 @@ function SceneReady({ onReady }: { onReady: () => void }) {
   useFrame(() => {
     // Wait for an actual scene frame, including the first shader compilation.
     if (++frames.current === 2) onReady()
+  })
+  return null
+}
+
+function FrameRate({ output }: { output: RefObject<HTMLSpanElement | null> }) {
+  const sample = useRef({ seconds: 0, frames: 0 })
+  useFrame((_, delta) => {
+    sample.current.seconds += delta
+    sample.current.frames++
+    if (sample.current.seconds >= 1) {
+      if (output.current) output.current.textContent = `${Math.round(sample.current.frames / sample.current.seconds)} FPS`
+      sample.current = { seconds: 0, frames: 0 }
+    }
   })
   return null
 }
@@ -110,9 +124,9 @@ const ceilingLightRotations: [number, number, number][] = ceilingLightPositions.
   index === 3 ? [3.142, -1.542, 3.142] : [0, 0, 0]
 )
 
-type CeilingBulbProps = Pick<SceneItemProps, 'name' | 'position' | 'rotation' | 'scale' | 'selected' | 'mode' | 'onSelect' | 'onChange'>
+type CeilingBulbProps = Pick<SceneItemProps, 'name' | 'position' | 'rotation' | 'scale' | 'selected' | 'mode' | 'onSelect' | 'onChange'> & { lightsEnabled?: boolean }
 
-function CeilingBulb({ name, position, rotation, scale, selected, mode, onSelect, onChange }: CeilingBulbProps) {
+function CeilingBulb({ name, position, rotation, scale, selected, mode, onSelect, onChange, lightsEnabled = true }: CeilingBulbProps) {
   const ref = useRef<Group>(null)
 
   return (
@@ -129,7 +143,7 @@ function CeilingBulb({ name, position, rotation, scale, selected, mode, onSelect
           <boxGeometry args={[0.065, 0.012, 0.8]} />
           <meshStandardMaterial color="#fff1d6" emissive="#fff1d6" emissiveIntensity={2} toneMapped={false} roughness={0.65} />
         </mesh>
-        <rectAreaLight
+        {lightsEnabled && <rectAreaLight
           position={[0, -0.034, 0]}
           rotation={[-Math.PI / 2, 0, 0]}
           width={0.065}
@@ -137,7 +151,7 @@ function CeilingBulb({ name, position, rotation, scale, selected, mode, onSelect
           color="#fff1d6"
           // Area lights use brightness per surface area, unlike point lights.
           intensity={100}
-        />
+        />}
       </group>
       {selected === name && ref.current && (
         <TransformControls object={ref.current} mode={mode} onObjectChange={() => {
@@ -148,7 +162,7 @@ function CeilingBulb({ name, position, rotation, scale, selected, mode, onSelect
   )
 }
 
-function CeilingLights(props: Pick<SceneItemProps, 'selected' | 'mode' | 'onSelect' | 'onChange'>) {
+function CeilingLights(props: Pick<SceneItemProps, 'selected' | 'mode' | 'onSelect' | 'onChange'> & { lightsEnabled: boolean }) {
   return (
     <group name="Warm white ceiling lights">
       {/* A continuous, thin black U-shaped mounting rail. */}
@@ -327,6 +341,17 @@ function FirstPersonController({ chairBodies }: { chairBodies: RefObject<Map<str
 function App() {
   const [ready, setReady] = useState(false)
   const markReady = useCallback(() => setReady(true), [])
+  const [lightsEnabled, setLightsEnabled] = useState(false)
+  const fpsOutput = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'KeyL' && !event.repeat && !(event.target instanceof HTMLInputElement)) {
+        setLightsEnabled((enabled) => !enabled)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
   const chairBodies = useRef(new Map<string, RapierRigidBody>())
   const [selected, setSelected] = useState<string | null>(null)
   const [mode, setMode] = useState<'translate' | 'rotate' | 'scale'>('translate')
@@ -362,6 +387,7 @@ function App() {
         <Suspense fallback={null}>
         <Physics gravity={[0, -9.81, 0]}>
         <SceneReady onReady={markReady} />
+        <FrameRate output={fpsOutput} />
         <RigidBody type="fixed" colliders={false}>
           <CuboidCollider args={[2.4, 0.15, 5.2]} position={[0, 0.35, 0]} />
           {/* Room walls match the Untitled model's world-space boundaries. */}
@@ -374,7 +400,8 @@ function App() {
           ))}
         </RigidBody>
         <color attach="background" args={['#20242b']} />
-        <CeilingLights selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} />
+        <CeilingLights lightsEnabled={lightsEnabled} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} />
+        {!lightsEnabled && <hemisphereLight color="#fff1d6" groundColor="#756750" intensity={1} />}
         <group onClick={() => setSelected(null)}>
           <Office />
         </group>
@@ -399,12 +426,17 @@ function App() {
         <SceneItem name="Sticker 1201" component={Sticker1201} position={[1.9, 1.9, 0.091]} rotation={[0, -1.571, 0]} scale={[3.28, 3.816, 9.985]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <SceneItem name="Sticker 1202" component={Sticker1202} position={[-1.865, 2.061, -2.288]} rotation={[0, 1.558, 0]} scale={[3.522, 3.522, 3.522]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <SceneItem name="Sticker 1203" component={Sticker1203} position={[-1.884, 1.9, 2.737]} rotation={[-3.142, 1.555, -3.142]} scale={[2.623, 2.623, 2.623]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
+        <SceneItem name="Astro" component={Astro} position={[1.25, 0.5, 4.1]} selected={selected} mode={mode} onSelect={selectObject} onChange={updateTransformCode} physics="none" />
         <FirstPersonController chairBodies={chairBodies} />
         </Physics>
         </Suspense>
       </Canvas>
       {!ready && <LoadingScreen />}
       <div className="scene-tools">
+        <button onClick={() => setLightsEnabled((enabled) => !enabled)} aria-pressed={!lightsEnabled}>
+          {lightsEnabled ? 'Use smooth warm lighting (L)' : 'Use detailed ceiling lighting (L)'}
+        </button>
+        <span ref={fpsOutput} aria-label="Frame rate">Measuring FPS…</span>
         <button onClick={() => setMode('translate')} className={mode === 'translate' ? 'active' : ''}>Move</button>
         <button onClick={() => setMode('rotate')} className={mode === 'rotate' ? 'active' : ''}>Rotate</button>
         <button onClick={() => setMode('scale')} className={mode === 'scale' ? 'active' : ''}>Scale</button>
